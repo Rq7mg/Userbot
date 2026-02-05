@@ -1,7 +1,4 @@
-import os
-import json
-import asyncio
-import random
+import os, json, asyncio, random
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
@@ -9,10 +6,10 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ---------------- ENV ----------------
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-API_ID = int(os.environ.get("API_ID"))
-API_HASH = os.environ.get("API_HASH")
-OWNER_ID = int(os.environ.get("OWNER_ID"))
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
+OWNER_ID = int(os.environ["OWNER_ID"])
 
 # ---------------- GLOBAL ----------------
 LOGIN_STATE = {}   # user_id: step
@@ -43,28 +40,26 @@ def get_client(uid):
         return None
     return TelegramClient(StringSession(sessions[str(uid)]), API_ID, API_HASH)
 
-async def notify_user(uid, message):
+async def notify_user(uid, text):
     client = get_client(uid)
     if client:
-        me = await client.get_me()
-        await client.send_message(me.id, message)
+        await client.start()
+        await client.send_message(uid, text)
 
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_premium(uid):
-        await update.message.reply_text(
-            "⚠️ Premium değilsiniz.\nPremium için owner ile iletişime geçin."
-        )
-    else:
-        await update.message.reply_text(
-            "✅ Premium aktif.\n.login → Hesap bağla\n.logout → Hesap sil\n.gn .ig .t .stop\n.pre → Premium ver"
-        )
+        await update.message.reply_text("⚠️ Premium değilsiniz.\nPremium için owner ile iletişime geçin.")
+        return
+    await update.message.reply_text(
+        "✅ Premium aktif.\n.login → Hesap bağla\n.logout → Hesap sil\n.gn .ig .t .stop\n.pre USER_ID (Owner)"
+    )
 
 async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid != OWNER_ID:
-        await update.message.reply_text("⛔ Bu komutu sadece owner kullanabilir.")
+        await update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
     if not context.args:
         await update.message.reply_text("❌ Kullanım: .pre USER_ID")
@@ -107,14 +102,13 @@ async def handle_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = TEMP_CLIENT[uid]
         asyncio.create_task(async_login_password(update, uid, data, text))
 
-# ---------------- ASYNC LOGIN ----------------
 async def async_login_phone(update, uid, client, phone):
     try:
         await client.connect()
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin (Rakamlar arası boşluk yok)")
+        await update.message.reply_text("📩 Telegram kodunu girin (rakamlar arası boşluk koymayın).")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -149,20 +143,19 @@ def cleanup(uid):
     TEMP_CLIENT.pop(uid, None)
 
 # ---------------- ETIKETLEME ----------------
-GOOD_MORNING_MESSAGES = ["Günaydın ☀️", "Mutlu sabahlar 🌸"]
-GOOD_NIGHT_MESSAGES = ["İyi geceler 🌙", "Huzurlu geceler ✨"]
+GOOD_MORNING_MESSAGES = ["Günaydın!", "Selam sabahlar!"]
+GOOD_NIGHT_MESSAGES = ["İyi geceler!", "Tatlı rüyalar!"]
 
 async def tag_all(uid, chat_id, text=None, type_msg=None):
     STOP_FLAGS[uid] = False
     client = get_client(uid)
     if not client:
         return await notify_user(uid, "❌ Userbot session bulunamadı. Login yapın.")
-    
     await client.start()
     try:
         participants = await client.get_participants(chat_id)
         for u in participants:
-            if STOP_FLAGS.get(uid):
+            if STOP_FLAGS.get(uid, False):
                 await notify_user(uid, "⛔ İşlem durduruldu!")
                 break
             mention = f"[{u.first_name}](tg://user?id={u.id})"
@@ -176,22 +169,22 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
                 msg = text + " " + mention
             await client.send_message(chat_id, msg, parse_mode="md")
             await asyncio.sleep(3)
+        STOP_FLAGS[uid] = False
         await notify_user(uid, f"✅ {chat_id} grubunda etiketleme tamamlandı.")
     except Exception as e:
+        STOP_FLAGS[uid] = False
         await notify_user(uid, f"❌ Etiketleme hatası: {e}")
 
-# ---------------- COMMANDS ----------------
+# ---------------- USERBOT KOMUTLARI ----------------
 async def gn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     chat_id = update.effective_chat.id
     asyncio.create_task(tag_all(uid, chat_id, type_msg="gn"))
-    await notify_user(uid, f"📢 İşlem başlatıldı: {chat_id}")
 
 async def ig(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     chat_id = update.effective_chat.id
     asyncio.create_task(tag_all(uid, chat_id, type_msg="ig"))
-    await notify_user(uid, f"📢 İşlem başlatıldı: {chat_id}")
 
 async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -199,15 +192,14 @@ async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = " ".join(context.args)
     if msg:
         asyncio.create_task(tag_all(uid, chat_id, text=msg, type_msg="t"))
-        await notify_user(uid, f"📢 İşlem başlatıldı: {chat_id}")
     else:
-        await update.message.reply_text("❌ .t mesaj yazın")
+        await update.message.reply_text("❌ .t mesaj girin")
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     STOP_FLAGS[uid] = True
-    await notify_user(uid, "⛔ İşlem durduruldu!")
     await update.message.reply_text("⛔ İşlem durduruldu!")
+    await notify_user(uid, "⛔ İşlem durduruldu!")
 
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -219,7 +211,6 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- MAIN ----------------
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
@@ -229,7 +220,6 @@ def main():
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("pre", pre))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
-
     print("Userbot başlatıldı...")
     app.run_polling()
 
