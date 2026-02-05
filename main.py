@@ -33,20 +33,21 @@ def is_premium(uid):
     data = load_json("authorized.json", {"users": []})
     return uid == OWNER_ID or uid in data["users"]
 
-# ---------------- MESSAGES ----------------
-GOOD_MORNING_MESSAGES = [
-    "Günaydın!", "Selam, günün güzel geçsin!", "Hayırlı sabahlar!", 
-    "Yeni bir gün, yeni umutlar!", "Mutlu sabahlar!", "Enerjik bir gün dilerim!",
-    "Güne merhaba!", "İyi sabahlar!", "Günaydın dostum!", "Bol kahkaha!"
-]
+# ---------------- START ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "✅ Userbot hazır!\n"
+        "Komutlar:\n"
+        ".login → Hesap bağla\n"
+        ".logout → Hesap sil\n"
+        ".pre → Premium ekle (sadece owner)\n"
+        ".gn → Günaydın etiketi\n"
+        ".ig → İyi geceler etiketi\n"
+        ".t <mesaj> → Mesaj + etiket\n"
+        ".stop → İşlemi durdur"
+    )
 
-GOOD_NIGHT_MESSAGES = [
-    "İyi geceler!", "Tatlı rüyalar!", "Huzurlu geceler!", 
-    "Rahat bir uyku dilerim!", "Geceyi iyi geçir!", "Hayırlı geceler!", 
-    "Güzel rüyalar!", "Uyku zamanı!", "İyi geceler dostum!", "Sessiz ve huzurlu geceler!"
-]
-
-# ---------------- PRE COMMAND ----------------
+# ---------------- COMMANDS ----------------
 async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid != OWNER_ID:
@@ -93,13 +94,14 @@ async def handle_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = TEMP_CLIENT[uid]
         asyncio.create_task(async_login_password(update, uid, data, text))
 
+# ---------------- ASYNC LOGIN ----------------
 async def async_login_phone(update, uid, client, phone):
     try:
         await client.connect()
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin.")
+        await update.message.reply_text("📩 Telegram kodunu girin (rakamlar arasında boşluk yok)")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -140,6 +142,19 @@ def get_client(uid):
         return None
     return TelegramClient(StringSession(sessions[str(uid)]), API_ID, API_HASH)
 
+# ---------------- MESAJLAR ----------------
+GOOD_MORNING_MESSAGES = [
+    "Günaydın 🌞", "Mutlu sabahlar ☀️", "İyi sabahlar 😊", "Yeni bir gün başladı 🌅", 
+    "Güne güzel başlayın 🌸", "Harika bir sabah dilerim ☀️", "Enerjik günler 🌞", 
+    "Şahane sabahlar 🌼", "Neşeli sabahlar 😄", "Sabahın güzelliği sizinle olsun 🌞"
+]
+
+GOOD_NIGHT_MESSAGES = [
+    "İyi geceler 🌙", "Tatlı rüyalar 😴", "Huzurlu geceler 🌌", "Rahat bir uyku 🌟", 
+    "Mutlu geceler 🌙", "Güzel rüyalar ✨", "Huzur dolu gece 🌌", "İyi uykular 😴", 
+    "Rüya gibi geceler 🌠", "Sevgi dolu geceler 🌙"
+]
+
 # ---------------- ETIKETLEME ----------------
 async def tag_all(uid, chat_id, text=None, type_msg=None):
     STOP_FLAGS[uid] = False
@@ -165,7 +180,7 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
             else:
                 msg = text + " " + mention
             await client.send_message(chat_id, msg, parse_mode="md")
-            await asyncio.sleep(3)
+            await asyncio.sleep(3)  # 3 saniye bekleme
     except Exception as e:
         print(f"Tag error: {e}")
 
@@ -205,15 +220,15 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Komutlar noktadan başlıyor
+    # Nokta ile komutlar
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
-    app.add_handler(CommandHandler("pre", pre))
     app.add_handler(CommandHandler("gn", gn))
     app.add_handler(CommandHandler("ig", ig))
     app.add_handler(CommandHandler("t", t))
     app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CommandHandler("pre", pre))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
 
     print("Userbot başlatıldı...")
