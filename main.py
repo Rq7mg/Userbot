@@ -1,6 +1,6 @@
 import os, json, asyncio
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
@@ -52,30 +52,23 @@ def start(update: Update, context: CallbackContext):
 # ----------------- PRE -----------------
 def pre(update: Update, context: CallbackContext):
     sender_id = update.effective_user.id
-
     if sender_id != OWNER_ID:
         update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
-
     if not context.args:
         update.message.reply_text("❌ Kullanım: /pre USER_ID")
         return
-
     try:
         target_id = int(context.args[0])
     except ValueError:
         update.message.reply_text("❌ Geçersiz ID")
         return
-
     data = load_json("authorized.json", {"users": []})
-
     if target_id in data["users"]:
         update.message.reply_text("ℹ️ Bu kullanıcı zaten premium.")
         return
-
     data["users"].append(target_id)
     save_json("authorized.json", data)
-
     update.message.reply_text(f"✅ {target_id} premium yapıldı.")
 
 # ----------------- LOGIN -----------------
@@ -91,45 +84,49 @@ def handle_login(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     if uid not in LOGIN_STATE:
         return
-
     text = update.message.text.strip()
     step = LOGIN_STATE[uid]
-
     if step == "phone":
         client = TelegramClient(StringSession(), API_ID, API_HASH)
-        asyncio.create_task(start_phone_step(update, uid, client, text))
-
+        asyncio.create_task(async_login_phone(update, uid, client, text))
     elif step == "code":
         data = TEMP_CLIENT[uid]
-        asyncio.create_task(start_code_step(update, uid, data, text))
-
+        asyncio.create_task(async_login_code(update, uid, data, text))
     elif step == "password":
         data = TEMP_CLIENT[uid]
-        asyncio.create_task(start_password_step(update, uid, data, text))
+        asyncio.create_task(async_login_password(update, uid, data, text))
 
 # ----------------- ASYNC LOGIN STEPS -----------------
-async def start_phone_step(update, uid, client, phone):
-    await client.connect()
-    await client.send_code_request(phone)
-    TEMP_CLIENT[uid] = {"client": client, "phone": phone}
-    LOGIN_STATE[uid] = "code"
-    update.message.reply_text("📩 Telegram kodunu girin")
+async def async_login_phone(update, uid, client, phone):
+    try:
+        await client.connect()
+        await client.send_code_request(phone)
+        TEMP_CLIENT[uid] = {"client": client, "phone": phone}
+        LOGIN_STATE[uid] = "code"
+        await update.message.reply_text("📩 Telegram kodunu girin")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Hata: {e}")
 
-async def start_code_step(update, uid, data, code):
+async def async_login_code(update, uid, data, code):
     try:
         await data["client"].sign_in(data["phone"], code)
         save_session(uid, data["client"])
         cleanup(uid)
-        update.message.reply_text("✅ Hesap bağlandı")
+        await update.message.reply_text("✅ Hesap bağlandı")
     except SessionPasswordNeededError:
         LOGIN_STATE[uid] = "password"
-        update.message.reply_text("🔐 2FA şifresini girin")
+        await update.message.reply_text("🔐 2FA şifresini girin")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Hata: {e}")
 
-async def start_password_step(update, uid, data, password):
-    await data["client"].sign_in(password=password)
-    save_session(uid, data["client"])
-    cleanup(uid)
-    update.message.reply_text("✅ Hesap bağlandı")
+async def async_login_password(update, uid, data, password):
+    try:
+        await data["client"].sign_in(password=password)
+        save_session(uid, data["client"])
+        cleanup(uid)
+        await update.message.reply_text("✅ Hesap bağlandı")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Hata: {e}")
 
 def save_session(uid, client):
     sessions = load_json("sessions.json", {})
@@ -152,7 +149,6 @@ async def tag_all(uid, text):
     client = get_client(uid)
     if not client:
         return
-
     await client.start()
     dialogs = await client.get_dialogs()
     for d in dialogs:
