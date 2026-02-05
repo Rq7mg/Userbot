@@ -10,6 +10,9 @@ from config import *
 # USERBOT
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
+# GLOBAL STOP FLAG
+STOP_FLAG = False
+
 # AUTH
 def load_auth():
     with open("authorized.json", "r") as f:
@@ -41,6 +44,9 @@ def pre(update: Update, context):
 
 # TAG SYSTEM
 async def tag_all(message):
+    global STOP_FLAG
+    STOP_FLAG = False
+
     dialogs = await client(GetDialogsRequest(
         offset_date=None,
         offset_id=0,
@@ -50,14 +56,25 @@ async def tag_all(message):
     ))
 
     for chat in dialogs.chats:
+        if STOP_FLAG:
+            break
+
         if chat.megagroup:
             members = await client.get_participants(chat)
             chunk = []
+
             for user in members:
+                if STOP_FLAG:
+                    break
+
                 if user.username:
                     chunk.append(f"@{user.username}")
+
                 if len(chunk) == 5:
-                    await client.send_message(chat.id, message + "\n" + " ".join(chunk))
+                    await client.send_message(
+                        chat.id,
+                        message + "\n" + " ".join(chunk)
+                    )
                     chunk = []
                     await asyncio.sleep(7)
 
@@ -65,26 +82,41 @@ async def tag_all(message):
 def gn(update: Update, context):
     if not is_auth(update.effective_user.id):
         return
+    update.message.reply_text("▶️ Günaydın etiketleme başladı")
     asyncio.run(tag_all("🌅 Günaydın"))
 
 # /ig
 def ig(update: Update, context):
     if not is_auth(update.effective_user.id):
         return
+    update.message.reply_text("▶️ İyi geceler etiketleme başladı")
     asyncio.run(tag_all("🌙 İyi geceler"))
 
 # /t mesaj
 def t(update: Update, context):
     if not is_auth(update.effective_user.id):
         return
+
     text = " ".join(context.args)
     if not text:
-        update.message.reply_text("/t mesaj")
+        update.message.reply_text("❌ /t mesaj")
         return
+
+    update.message.reply_text("▶️ Etiketleme başladı")
     asyncio.run(tag_all(text))
+
+# /stop
+def stop(update: Update, context):
+    global STOP_FLAG
+    if not is_auth(update.effective_user.id):
+        return
+
+    STOP_FLAG = True
+    update.message.reply_text("⛔ Etiketleme durduruldu")
 
 def main():
     client.start()
+
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -92,6 +124,7 @@ def main():
     dp.add_handler(CommandHandler("gn", gn))
     dp.add_handler(CommandHandler("ig", ig))
     dp.add_handler(CommandHandler("t", t))
+    dp.add_handler(CommandHandler("stop", stop))
 
     updater.start_polling()
     updater.idle()
