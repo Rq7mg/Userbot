@@ -192,9 +192,10 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚪 Hesap silindi")
 
 # ---------------- MAIN ----------------
-async def main():
+def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
@@ -205,9 +206,8 @@ async def main():
     app.add_handler(CommandHandler("pre", pre))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
 
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    # Tek satırda polling
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
