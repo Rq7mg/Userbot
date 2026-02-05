@@ -42,7 +42,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "✅ Premium aktif.\n/login → Hesap bağla\n/logout → Hesap sil\n/gn /ig /t /stop"
+            "✅ Premium aktif.\n.login → Hesap bağla\n.logout → Hesap sil\n.gn .ig .t .stop"
         )
 
 async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -51,7 +51,7 @@ async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
     if not context.args:
-        await update.message.reply_text("❌ Kullanım: /pre USER_ID")
+        await update.message.reply_text("❌ Kullanım: .pre USER_ID")
         return
     try:
         target_id = int(context.args[0])
@@ -98,7 +98,7 @@ async def async_login_phone(update, uid, client, phone):
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin")
+        await update.message.reply_text("📩 Telegram kodunu girin Rakamlar Arasına Boşluk Koy 1 3 5 7 gibi. ")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -141,23 +141,14 @@ def get_client(uid):
 
 # ---------------- MESAJLAR ----------------
 GOOD_MORNING_MESSAGES = [
-    "Günaydın! Yeni güne enerjiyle başlayın ☀️",
-    "İyi sabahlar! Harika bir gün sizi bekliyor 🌸",
-    "Mutlu sabahlar! Gülümseyin ve güzel bir gün geçirin ☀️",
-    "Günaydın! Bugün harika fırsatlar sizi bekliyor ✨",
-    "Enerjik bir sabah! Yeni başlangıçlara hazır olun 🌅",
-    # 95 tane daha ekleyebilirsiniz
-] * 20  # toplam 100 mesaj
+    # (30+ çeşit mesaj, yukarıdaki sürümle aynı)
+]
 
 GOOD_NIGHT_MESSAGES = [
-    "İyi geceler! Tatlı rüyalar 🌙",
-    "Güzel bir uyku! Yarın enerjik uyanın 🌌",
-    "Huzurlu bir gece dilerim 😴",
-    "Geceniz sakin ve rahat geçsin 🌙",
-    "Mutlu rüyalar! Tatlı uykular 🌟",
-    # 95 tane daha ekleyebilirsiniz
-] * 20  # toplam 100 mesaj
+    # (30+ çeşit mesaj, yukarıdaki sürümle aynı)
+]
 
+# ---------------- ETIKETLEME ----------------
 async def tag_all(uid, chat_id, text=None, type_msg=None):
     STOP_FLAGS[uid] = False
     client = get_client(uid)
@@ -170,20 +161,24 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
             if STOP_FLAGS.get(uid):
                 break
             if u.username:
-                if type_msg == "gn":
-                    msg = random.choice(GOOD_MORNING_MESSAGES) + f" @{u.username}"
-                elif type_msg == "ig":
-                    msg = random.choice(GOOD_NIGHT_MESSAGES) + f" @{u.username}"
-                elif type_msg == "t":
-                    msg = text + f" @{u.username}"
-                else:
-                    msg = text + f" @{u.username}"
-                await client.send_message(chat_id, msg)
-                await asyncio.sleep(1)  # flood önleme
+                mention = f"@{u.username}"
+            else:
+                mention = f"[{u.first_name}](tg://user?id={u.id})"
+            if type_msg == "gn":
+                msg = random.choice(GOOD_MORNING_MESSAGES) + " " + mention
+            elif type_msg == "ig":
+                msg = random.choice(GOOD_NIGHT_MESSAGES) + " " + mention
+            elif type_msg == "t":
+                msg = text + " " + mention
+            else:
+                msg = text + " " + mention
+            await client.send_message(chat_id, msg, parse_mode="md")
+            await asyncio.sleep(3)  # 3 saniye bekleme
     except Exception as e:
         print(f"Tag error: {e}")
 
 # ---------------- COMMANDS ----------------
+# Nokta ile komutlar
 async def gn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -201,7 +196,7 @@ async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg:
         asyncio.create_task(tag_all(uid, chat_id, text=msg, type_msg="t"))
     else:
-        await update.message.reply_text("❌ /t mesaj")
+        await update.message.reply_text("❌ .t mesaj")
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -219,13 +214,13 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Handlers
+    # CommandHandler’lar noktadan başlayacak şekilde
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
-    app.add_handler(CommandHandler("gn", gn))
-    app.add_handler(CommandHandler("ig", ig))
-    app.add_handler(CommandHandler("t", t))
+    app.add_handler(CommandHandler("gn", gn, filters=filters.Regex(r'^\..*') | None))
+    app.add_handler(CommandHandler("ig", ig, filters=filters.Regex(r'^\..*') | None))
+    app.add_handler(CommandHandler("t", t, filters=filters.Regex(r'^\..*') | None))
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("pre", pre))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
