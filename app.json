@@ -1,7 +1,6 @@
 {
   "name": "Telegram Userbot System",
   "description": "Bot + Userbot kontrollü etiket sistemi",
-  "repository": "https://github.com/username/repo",
   "env": {
     "BOT_TOKEN": {
       "description": "Telegram Bot Token",
@@ -18,12 +17,15 @@
     "OWNER_ID": {
       "description": "Bot sahibi Telegram ID",
       "required": true
+    },
+    "STRING_SESSION": {
+      "description": "Telethon StringSession (tek sefer üretilir)",
+      "required": true
     }
   },
   "formation": {
     "worker": {
-      "quantity": 1,
-      "size": "basic"
+      "quantity": 1
     }
   }
 }
