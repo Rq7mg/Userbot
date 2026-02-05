@@ -1,5 +1,8 @@
-BOT_TOKEN = "BOT_TOKEN_BURAYA"
-API_ID = 123456
-API_HASH = "API_HASH_BURAYA"
+import os
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
+OWNER_ID = int(os.environ.get("OWNER_ID"))
+
 SESSION_NAME = "userbot"
-OWNER_ID = 123456789
