@@ -1,4 +1,7 @@
-import os, json, asyncio, random
+import os
+import json
+import asyncio
+import random
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
@@ -6,22 +9,22 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ---------------- ENV ----------------
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-API_ID = int(os.environ["API_ID"])
-API_HASH = os.environ["API_HASH"]
-OWNER_ID = int(os.environ["OWNER_ID"])
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+API_ID = int(os.environ.get("API_ID"))
+API_HASH = os.environ.get("API_HASH")
+OWNER_ID = int(os.environ.get("OWNER_ID"))
 
-# ---------------- GLOBAL ----------------
-LOGIN_STATE = {}   # user_id: step
-TEMP_CLIENT = {}   # user_id: client + phone
-STOP_FLAGS = {}    # user_id: stop durumu
+# ---------------- GLOBALS ----------------
+LOGIN_STATE = {}       # user_id: step
+TEMP_CLIENT = {}       # user_id: {"client": client, "phone": phone}
+STOP_FLAGS = {}        # user_id: stop bayrağı
 
 # ---------------- JSON UTILS ----------------
 def load_json(name, default):
     if not os.path.exists(name):
         with open(name, "w") as f:
             json.dump(default, f)
-    with open(name) as f:
+    with open(name, "r") as f:
         return json.load(f)
 
 def save_json(name, data):
@@ -33,45 +36,37 @@ def is_premium(uid):
     data = load_json("authorized.json", {"users": []})
     return uid == OWNER_ID or uid in data["users"]
 
-# ---------------- USERBOT ----------------
-def get_client(uid):
-    sessions = load_json("sessions.json", {})
-    if str(uid) not in sessions:
-        return None
-    return TelegramClient(StringSession(sessions[str(uid)]), API_ID, API_HASH)
-
-async def notify_user(uid, text):
-    client = get_client(uid)
-    if client:
-        await client.start()
-        await client.send_message(uid, text)
-
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_premium(uid):
-        await update.message.reply_text("⚠️ Premium değilsiniz.\nPremium için owner ile iletişime geçin.")
+        await update.message.reply_text("⚠️ Premium değilsiniz.\nPremium için @OfficialKiyici hesabına yazın.")
         return
     await update.message.reply_text(
-        "✅ Premium aktif.\n.login → Hesap bağla\n.logout → Hesap sil\n.gn .ig .t .stop\n.pre USER_ID (Owner)"
+        "✅ Premium aktif.\n\nKomutlar:\n"
+        ".login → Hesap bağla\n.logout → Hesap sil\n"
+        ".gn → Günaydın etiketleme\n"
+        ".ig → İyi geceler etiketleme\n"
+        ".t <mesaj> → Mesaj ile etiketleme\n"
+        ".stop → İşlemi durdur"
     )
 
 async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid != OWNER_ID:
-        await update.message.reply_text("⛔ Bu komutu kullanamazsın.")
+        await update.message.reply_text("⛔ Bu komutu kullanamazsınız.")
         return
     if not context.args:
         await update.message.reply_text("❌ Kullanım: .pre USER_ID")
         return
     try:
         target_id = int(context.args[0])
-    except ValueError:
+    except:
         await update.message.reply_text("❌ Geçersiz ID")
         return
     data = load_json("authorized.json", {"users": []})
     if target_id in data["users"]:
-        await update.message.reply_text("ℹ️ Bu kullanıcı zaten premium.")
+        await update.message.reply_text("ℹ️ Kullanıcı zaten premium.")
         return
     data["users"].append(target_id)
     save_json("authorized.json", data)
@@ -81,7 +76,7 @@ async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_premium(uid):
-        await update.message.reply_text("⛔ Premium değilsiniz.")
+        await update.message.reply_text("⛔ Premium değilsiniz. @OfficialKiyici Hesabına Ulaşın..")
         return
     LOGIN_STATE[uid] = "phone"
     await update.message.reply_text("📱 Telefon numaranızı girin (+90...)")
@@ -108,7 +103,7 @@ async def async_login_phone(update, uid, client, phone):
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin (rakamlar arası boşluk koymayın).")
+        await update.message.reply_text("📩 Telegram kodunu girin (rakamlar arası boşluk koy).")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -142,23 +137,40 @@ def cleanup(uid):
     LOGIN_STATE.pop(uid, None)
     TEMP_CLIENT.pop(uid, None)
 
+# ---------------- USERBOT ----------------
+def get_client(uid):
+    sessions = load_json("sessions.json", {})
+    if str(uid) not in sessions:
+        return None
+    return TelegramClient(StringSession(sessions[str(uid)]), API_ID, API_HASH)
+
 # ---------------- ETIKETLEME ----------------
-GOOD_MORNING_MESSAGES = ["Günaydın!", "Selam sabahlar!"]
-GOOD_NIGHT_MESSAGES = ["İyi geceler!", "Tatlı rüyalar!"]
+STOP_FLAGS = {}
+
+GOOD_MORNING_MESSAGES = [
+    "Günaydın 🌅",
+    "Hayırlı sabahlar ☀️",
+    "Selam, güzel bir gün dilerim 😊",
+]
+
+GOOD_NIGHT_MESSAGES = [
+    "İyi geceler 🌙",
+    "Tatlı rüyalar 😴",
+    "Selam, iyi geceler 🌌",
+]
 
 async def tag_all(uid, chat_id, text=None, type_msg=None):
     STOP_FLAGS[uid] = False
     client = get_client(uid)
     if not client:
-        return await notify_user(uid, "❌ Userbot session bulunamadı. Login yapın.")
+        return
     await client.start()
     try:
         participants = await client.get_participants(chat_id)
         for u in participants:
-            if STOP_FLAGS.get(uid, False):
-                await notify_user(uid, "⛔ İşlem durduruldu!")
+            if STOP_FLAGS.get(uid):
                 break
-            mention = f"[{u.first_name}](tg://user?id={u.id})"
+            mention = f"@{u.username}" if u.username else f"[{u.first_name}](tg://user?id={u.id})"
             if type_msg == "gn":
                 msg = random.choice(GOOD_MORNING_MESSAGES) + " " + mention
             elif type_msg == "ig":
@@ -168,14 +180,13 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
             else:
                 msg = text + " " + mention
             await client.send_message(chat_id, msg, parse_mode="md")
-            await asyncio.sleep(3)
-        STOP_FLAGS[uid] = False
-        await notify_user(uid, f"✅ {chat_id} grubunda etiketleme tamamlandı.")
+            await asyncio.sleep(2)
+        # İşlem bitti bildirimi
+        await context.bot.send_message(uid, "✅ İşlem tamamlandı!", parse_mode="html")
     except Exception as e:
-        STOP_FLAGS[uid] = False
-        await notify_user(uid, f"❌ Etiketleme hatası: {e}")
+        await context.bot.send_message(uid, f"❌ Hata: {e}", parse_mode="html")
 
-# ---------------- USERBOT KOMUTLARI ----------------
+# ---------------- KOMUTLAR ----------------
 async def gn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     chat_id = update.effective_chat.id
@@ -193,13 +204,12 @@ async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if msg:
         asyncio.create_task(tag_all(uid, chat_id, text=msg, type_msg="t"))
     else:
-        await update.message.reply_text("❌ .t mesaj girin")
+        await update.message.reply_text("❌ Kullanım: .t <mesaj>")
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     STOP_FLAGS[uid] = True
-    await update.message.reply_text("⛔ İşlem durduruldu!")
-    await notify_user(uid, "⛔ İşlem durduruldu!")
+    await update.message.reply_text("⛔ İşlem durduruldu")
 
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -214,11 +224,11 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
+    app.add_handler(CommandHandler("pre", pre))
     app.add_handler(CommandHandler("gn", gn))
     app.add_handler(CommandHandler("ig", ig))
     app.add_handler(CommandHandler("t", t))
     app.add_handler(CommandHandler("stop", stop))
-    app.add_handler(CommandHandler("pre", pre))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
     print("Userbot başlatıldı...")
     app.run_polling()
