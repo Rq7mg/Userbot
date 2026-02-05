@@ -1,139 +1,179 @@
-import os
-import json
-import asyncio
-from telegram.ext import Updater, CommandHandler
+import os, json, asyncio
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram import Update
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.functions.messages import GetDialogsRequest
-from telethon.tl.types import InputPeerEmpty
+from telethon.errors import SessionPasswordNeededError
 
-# ================== ENV ==================
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-API_ID = int(os.environ.get("API_ID"))
-API_HASH = os.environ.get("API_HASH")
-OWNER_ID = int(os.environ.get("OWNER_ID"))
-STRING_SESSION = os.environ.get("STRING_SESSION")
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
+OWNER_ID = int(os.environ["OWNER_ID"])
 
-# ================== USERBOT ==================
-client = TelegramClient(
-    StringSession(STRING_SESSION),
-    API_ID,
-    API_HASH
-)
+LOGIN_STATE = {}
+TEMP_CLIENT = {}
+STOP_FLAGS = {}   # user_id: bool
 
-# ================== GLOBAL STOP ==================
-STOP_FLAG = False
+# ---------- JSON ----------
+def load_json(name, default):
+    if not os.path.exists(name):
+        with open(name, "w") as f:
+            json.dump(default, f)
+    with open(name) as f:
+        return json.load(f)
 
-# ================== AUTH ==================
-def load_auth():
-    with open("authorized.json", "r") as f:
-        return json.load(f)["users"]
+def save_json(name, data):
+    with open(name, "w") as f:
+        json.dump(data, f)
 
-def save_auth(users):
-    with open("authorized.json", "w") as f:
-        json.dump({"users": users}, f)
+# ---------- AUTH ----------
+def is_premium(uid):
+    data = load_json("authorized.json", {"users": []})
+    return uid == OWNER_ID or uid in data["users"]
 
-def is_auth(uid):
-    return uid == OWNER_ID or uid in load_auth()
+# ---------- START ----------
+def start(update: Update, context):
+    uid = update.effective_user.id
+    if not is_premium(uid):
+        update.message.reply_text(
+            "⚠️ Premium kullanıcı değilsiniz.\n"
+            "Premium için @OfficialKiyici hesabına yazın."
+        )
+    else:
+        update.message.reply_text(
+            "✅ Premium aktif.\n"
+            "/login → hesap bağla\n"
+            "/logout → hesap sil\n"
+            "/gn /ig /t /stop"
+        )
 
-# ================== /pre ==================
-def pre(update: Update, context):
-    if update.effective_user.id != OWNER_ID:
+# ---------- LOGIN ----------
+def login(update: Update, context):
+    uid = update.effective_user.id
+    if not is_premium(uid):
         return
-    try:
-        uid = int(context.args[0])
-        users = load_auth()
-        if uid not in users:
-            users.append(uid)
-            save_auth(users)
-            update.message.reply_text("✅ Yetki verildi")
-        else:
-            update.message.reply_text("ℹ️ Zaten yetkili")
-    except:
-        update.message.reply_text("❌ /pre id")
 
-# ================== TAG SYSTEM ==================
-async def tag_all(text):
-    global STOP_FLAG
-    STOP_FLAG = False
+    LOGIN_STATE[uid] = "phone"
+    update.message.reply_text("📱 Telefon numaranızı girin (+90...)")
 
-    dialogs = await client(GetDialogsRequest(
-        offset_date=None,
-        offset_id=0,
-        offset_peer=InputPeerEmpty(),
-        limit=100,
-        hash=0
-    ))
+def handle_login(update: Update, context):
+    uid = update.effective_user.id
+    if uid not in LOGIN_STATE:
+        return
 
-    for chat in dialogs.chats:
-        if STOP_FLAG:
+    text = update.message.text.strip()
+    step = LOGIN_STATE[uid]
+
+    if step == "phone":
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
+        client.connect()
+        client.send_code_request(text)
+        TEMP_CLIENT[uid] = {"client": client, "phone": text}
+        LOGIN_STATE[uid] = "code"
+        update.message.reply_text("📩 Telegram kodunu girin")
+
+    elif step == "code":
+        data = TEMP_CLIENT[uid]
+        try:
+            data["client"].sign_in(data["phone"], text)
+            save_session(uid, data["client"])
+            cleanup(uid)
+            update.message.reply_text("✅ Hesap bağlandı")
+        except SessionPasswordNeededError:
+            LOGIN_STATE[uid] = "password"
+            update.message.reply_text("🔐 2FA şifresini girin")
+
+    elif step == "password":
+        data = TEMP_CLIENT[uid]
+        data["client"].sign_in(password=text)
+        save_session(uid, data["client"])
+        cleanup(uid)
+        update.message.reply_text("✅ Hesap bağlandı")
+
+def save_session(uid, client):
+    sessions = load_json("sessions.json", {})
+    sessions[str(uid)] = client.session.save()
+    save_json("sessions.json", sessions)
+
+def cleanup(uid):
+    LOGIN_STATE.pop(uid, None)
+    TEMP_CLIENT.pop(uid, None)
+
+# ---------- USERBOT ----------
+def get_client(uid):
+    sessions = load_json("sessions.json", {})
+    if str(uid) not in sessions:
+        return None
+    return TelegramClient(StringSession(sessions[str(uid)]), API_ID, API_HASH)
+
+async def tag_all(uid, text):
+    STOP_FLAGS[uid] = False
+    client = get_client(uid)
+    if not client:
+        return
+
+    await client.start()
+    dialogs = await client.get_dialogs()
+
+    for d in dialogs:
+        if STOP_FLAGS.get(uid):
             break
-
-        if chat.megagroup:
-            members = await client.get_participants(chat)
+        if d.is_group:
+            users = await client.get_participants(d)
             chunk = []
-
-            for user in members:
-                if STOP_FLAG:
+            for u in users:
+                if STOP_FLAGS.get(uid):
                     break
-
-                if user.username:
-                    chunk.append(f"@{user.username}")
-
+                if u.username:
+                    chunk.append(f"@{u.username}")
                 if len(chunk) == 5:
-                    await client.send_message(
-                        chat.id,
-                        f"{text}\n" + " ".join(chunk)
-                    )
+                    await client.send_message(d.id, text + "\n" + " ".join(chunk))
                     chunk = []
                     await asyncio.sleep(7)
 
-# ================== COMMANDS ==================
+# ---------- COMMANDS ----------
 def gn(update: Update, context):
-    if not is_auth(update.effective_user.id):
-        return
-    update.message.reply_text("▶️ Günaydın başladı")
-    asyncio.run(tag_all("🌅 Günaydın"))
+    uid = update.effective_user.id
+    asyncio.run(tag_all(uid, "🌅 Günaydın"))
 
 def ig(update: Update, context):
-    if not is_auth(update.effective_user.id):
-        return
-    update.message.reply_text("▶️ İyi geceler başladı")
-    asyncio.run(tag_all("🌙 İyi geceler"))
+    uid = update.effective_user.id
+    asyncio.run(tag_all(uid, "🌙 İyi geceler"))
 
 def t(update: Update, context):
-    if not is_auth(update.effective_user.id):
-        return
+    uid = update.effective_user.id
     msg = " ".join(context.args)
-    if not msg:
-        update.message.reply_text("❌ /t mesaj")
-        return
-    update.message.reply_text("▶️ Etiketleme başladı")
-    asyncio.run(tag_all(msg))
+    if msg:
+        asyncio.run(tag_all(uid, msg))
 
 def stop(update: Update, context):
-    global STOP_FLAG
-    if not is_auth(update.effective_user.id):
-        return
-    STOP_FLAG = True
-    update.message.reply_text("⛔ Durduruldu")
+    uid = update.effective_user.id
+    STOP_FLAGS[uid] = True
+    update.message.reply_text("⛔ İşlem durduruldu")
 
-# ================== MAIN ==================
+def logout(update: Update, context):
+    uid = update.effective_user.id
+    sessions = load_json("sessions.json", {})
+    sessions.pop(str(uid), None)
+    save_json("sessions.json", sessions)
+    update.message.reply_text("🚪 Hesap silindi")
+
+# ---------- MAIN ----------
 def main():
-    client.start()
+    up = Updater(BOT_TOKEN, use_context=True)
+    dp = up.dispatcher
 
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("pre", pre))
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("login", login))
+    dp.add_handler(CommandHandler("logout", logout))
     dp.add_handler(CommandHandler("gn", gn))
     dp.add_handler(CommandHandler("ig", ig))
     dp.add_handler(CommandHandler("t", t))
     dp.add_handler(CommandHandler("stop", stop))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_login))
 
-    updater.start_polling()
-    updater.idle()
+    up.start_polling()
+    up.idle()
 
 if __name__ == "__main__":
     main()
