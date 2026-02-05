@@ -5,16 +5,18 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 
+# ----------------- ENV -----------------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 OWNER_ID = int(os.environ["OWNER_ID"])
 
-LOGIN_STATE = {}     # user_id: step
-TEMP_CLIENT = {}     # user_id: telethon client + phone
-STOP_FLAGS = {}      # user_id: stop durumu
+# ----------------- GLOBAL -----------------
+LOGIN_STATE = {}    # user_id: step
+TEMP_CLIENT = {}    # user_id: telethon client + phone
+STOP_FLAGS = {}     # user_id: durdurma flag
 
-# ---------- JSON UTILS ----------
+# ----------------- JSON UTILS -----------------
 def load_json(name, default):
     if not os.path.exists(name):
         with open(name, "w") as f:
@@ -26,12 +28,12 @@ def save_json(name, data):
     with open(name, "w") as f:
         json.dump(data, f)
 
-# ---------- AUTH ----------
+# ----------------- AUTH -----------------
 def is_premium(uid):
     data = load_json("authorized.json", {"users": []})
     return uid == OWNER_ID or uid in data["users"]
 
-# ---------- START ----------
+# ----------------- START -----------------
 def start(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     if not is_premium(uid):
@@ -47,7 +49,7 @@ def start(update: Update, context: CallbackContext):
             "/gn /ig /t /stop"
         )
 
-# ---------- PRE KOMUTU ----------
+# ----------------- PRE -----------------
 def pre(update: Update, context: CallbackContext):
     sender_id = update.effective_user.id
 
@@ -76,7 +78,7 @@ def pre(update: Update, context: CallbackContext):
 
     update.message.reply_text(f"✅ {target_id} premium yapıldı.")
 
-# ---------- LOGIN FLOW ----------
+# ----------------- LOGIN -----------------
 def login(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     if not is_premium(uid):
@@ -105,7 +107,7 @@ def handle_login(update: Update, context: CallbackContext):
         data = TEMP_CLIENT[uid]
         asyncio.create_task(start_password_step(update, uid, data, text))
 
-# ---------- ASYNC LOGIN STEPS ----------
+# ----------------- ASYNC LOGIN STEPS -----------------
 async def start_phone_step(update, uid, client, phone):
     await client.connect()
     await client.send_code_request(phone)
@@ -138,7 +140,7 @@ def cleanup(uid):
     LOGIN_STATE.pop(uid, None)
     TEMP_CLIENT.pop(uid, None)
 
-# ---------- USERBOT ----------
+# ----------------- USERBOT -----------------
 def get_client(uid):
     sessions = load_json("sessions.json", {})
     if str(uid) not in sessions:
@@ -169,7 +171,7 @@ async def tag_all(uid, text):
                     chunk = []
                     await asyncio.sleep(7)
 
-# ---------- COMMANDS ----------
+# ----------------- COMMANDS -----------------
 def gn(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     asyncio.create_task(tag_all(uid, "🌅 Günaydın"))
@@ -198,7 +200,7 @@ def logout(update: Update, context: CallbackContext):
     save_json("sessions.json", sessions)
     update.message.reply_text("🚪 Hesap silindi")
 
-# ---------- MAIN ----------
+# ----------------- MAIN -----------------
 def main():
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
