@@ -3,7 +3,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 # ---------------- ENV ----------------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -35,7 +35,10 @@ def is_premium(uid):
 
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     if not is_premium(uid):
         await update.message.reply_text(
             "⚠️ Premium değilsiniz.\nPremium için @OfficialKiyici hesabına yazın."
@@ -46,7 +49,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     if uid != OWNER_ID:
         await update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
@@ -68,7 +74,10 @@ async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- LOGIN ----------------
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     if not is_premium(uid):
         await update.message.reply_text("⛔ Premium değilsiniz.")
         return
@@ -76,7 +85,10 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📱 Telefon numaranızı girin (+90...)")
 
 async def handle_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     if uid not in LOGIN_STATE:
         return
     text = update.message.text.strip()
@@ -98,7 +110,7 @@ async def async_login_phone(update, uid, client, phone):
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin Rakamlar Arasına Boşluk Koy 1 3 5 7 gibi. ")
+        await update.message.reply_text("📩 Telegram kodunu girin (örn: 12345)")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -141,11 +153,14 @@ def get_client(uid):
 
 # ---------------- MESAJLAR ----------------
 GOOD_MORNING_MESSAGES = [
-    # (30+ çeşit mesaj, yukarıdaki sürümle aynı)
+    "Günaydın 🌞", "Hayırlı sabahlar 🌅", "Selam ve günaydın!", "Mutlu sabahlar ☀️",
+    "İyi sabahlar 😄", "Yeni gününüz kutlu olsun 🌻", "Günaydın dostlar ☕️", "Neşeli sabahlar 🌞",
+    "Güne merhaba 😃", "Huzurlu sabahlar 🌄"
 ]
-
 GOOD_NIGHT_MESSAGES = [
-    # (30+ çeşit mesaj, yukarıdaki sürümle aynı)
+    "İyi geceler 🌙", "Huzurlu geceler 😴", "Tatlı rüyalar 🌟", "Rahat bir uyku dilerim 🛌",
+    "Geceniz güzel olsun 🌌", "Mutlu geceler 🌙", "Güzel rüyalar 😇", "Dinlendirici geceler 🌙",
+    "Geceyi huzurla kapatın 😌", "İyi uykular 🌙"
 ]
 
 # ---------------- ETIKETLEME ----------------
@@ -160,51 +175,68 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
         for u in participants:
             if STOP_FLAGS.get(uid):
                 break
-            if u.username:
-                mention = f"@{u.username}"
-            else:
-                mention = f"[{u.first_name}](tg://user?id={u.id})"
-            if type_msg == "gn":
-                msg = random.choice(GOOD_MORNING_MESSAGES) + " " + mention
-            elif type_msg == "ig":
-                msg = random.choice(GOOD_NIGHT_MESSAGES) + " " + mention
-            elif type_msg == "t":
-                msg = text + " " + mention
-            else:
-                msg = text + " " + mention
-            await client.send_message(chat_id, msg, parse_mode="md")
-            await asyncio.sleep(3)  # 3 saniye bekleme
+            try:
+                if u.username:
+                    mention = f"@{u.username}"
+                else:
+                    mention = f"[{u.first_name}](tg://user?id={u.id})"
+                if type_msg == "gn":
+                    msg = random.choice(GOOD_MORNING_MESSAGES) + " " + mention
+                elif type_msg == "ig":
+                    msg = random.choice(GOOD_NIGHT_MESSAGES) + " " + mention
+                elif type_msg == "t":
+                    msg = text + " " + mention
+                else:
+                    msg = text + " " + mention
+                await client.send_message(chat_id, msg, parse_mode="md")
+                await asyncio.sleep(3)
+            except Exception as e:
+                print(f"Mesaj gönderilemedi {u.id}: {e}")
     except Exception as e:
         print(f"Tag error: {e}")
 
-# ---------------- COMMANDS ----------------
-# Nokta ile komutlar
+# ---------------- KOMUTLAR ----------------
 async def gn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     chat_id = update.effective_chat.id
     asyncio.create_task(tag_all(uid, chat_id, type_msg="gn"))
 
 async def ig(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     chat_id = update.effective_chat.id
     asyncio.create_task(tag_all(uid, chat_id, type_msg="ig"))
 
 async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     chat_id = update.effective_chat.id
     msg = " ".join(context.args)
-    if msg:
-        asyncio.create_task(tag_all(uid, chat_id, text=msg, type_msg="t"))
-    else:
-        await update.message.reply_text("❌ .t mesaj")
+    if not msg:
+        await update.message.reply_text("❌ .t mesaj yazmalısın")
+        return
+    asyncio.create_task(tag_all(uid, chat_id, text=msg, type_msg="t"))
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     STOP_FLAGS[uid] = True
     await update.message.reply_text("⛔ İşlem durduruldu")
 
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
+    user = update.effective_user
+    if not user:
+        return
+    uid = user.id
     sessions = load_json("sessions.json", {})
     sessions.pop(str(uid), None)
     save_json("sessions.json", sessions)
@@ -214,17 +246,17 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # CommandHandler’lar noktadan başlayacak şekilde
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("login", login))
-    app.add_handler(CommandHandler("logout", logout))
-    app.add_handler(CommandHandler("gn", gn, filters=filters.Regex(r'^\..*') | None))
-    app.add_handler(CommandHandler("ig", ig, filters=filters.Regex(r'^\..*') | None))
-    app.add_handler(CommandHandler("t", t, filters=filters.Regex(r'^\..*') | None))
-    app.add_handler(CommandHandler("stop", stop))
-    app.add_handler(CommandHandler("pre", pre))
+    # Nokta komutlar MessageHandler ile
+    app.add_handler(MessageHandler(filters.Regex(r'^\.gn'), gn))
+    app.add_handler(MessageHandler(filters.Regex(r'^\.ig'), ig))
+    app.add_handler(MessageHandler(filters.Regex(r'^\.t'), t))
+    app.add_handler(MessageHandler(filters.Regex(r'^\.stop'), stop))
+    app.add_handler(MessageHandler(filters.Regex(r'^\.login'), login))
+    app.add_handler(MessageHandler(filters.Regex(r'^\.logout'), logout))
+    app.add_handler(MessageHandler(filters.Regex(r'^\.pre'), pre))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
 
+    print("Userbot başlatıldı...")
     app.run_polling()
 
 if __name__ == "__main__":
