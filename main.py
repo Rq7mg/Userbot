@@ -1,22 +1,22 @@
 import os, json, asyncio
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-# ----------------- ENV -----------------
+# ---------------- ENV ----------------
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 OWNER_ID = int(os.environ["OWNER_ID"])
 
-# ----------------- GLOBAL -----------------
-LOGIN_STATE = {}    # user_id: step
-TEMP_CLIENT = {}    # user_id: telethon client + phone
-STOP_FLAGS = {}     # user_id: durdurma flag
+# ---------------- GLOBAL ----------------
+LOGIN_STATE = {}   # user_id: step
+TEMP_CLIENT = {}   # user_id: client + phone
+STOP_FLAGS = {}    # user_id: stop durumu
 
-# ----------------- JSON UTILS -----------------
+# ---------------- JSON UTILS ----------------
 def load_json(name, default):
     if not os.path.exists(name):
         with open(name, "w") as f:
@@ -28,59 +28,54 @@ def save_json(name, data):
     with open(name, "w") as f:
         json.dump(data, f)
 
-# ----------------- AUTH -----------------
+# ---------------- AUTH ----------------
 def is_premium(uid):
     data = load_json("authorized.json", {"users": []})
     return uid == OWNER_ID or uid in data["users"]
 
-# ----------------- START -----------------
-def start(update: Update, context: CallbackContext):
+# ---------------- COMMANDS ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_premium(uid):
-        update.message.reply_text(
-            "⚠️ Premium değilsiniz.\n"
-            "Premium için @OfficialKiyici hesabına yazın."
+        await update.message.reply_text(
+            "⚠️ Premium değilsiniz.\nPremium için @OfficialKiyici hesabına yazın."
         )
     else:
-        update.message.reply_text(
-            "✅ Premium aktif.\n"
-            "/login → Hesap bağla\n"
-            "/logout → Hesap sil\n"
-            "/gn /ig /t /stop"
+        await update.message.reply_text(
+            "✅ Premium aktif.\n/login → Hesap bağla\n/logout → Hesap sil\n/gn /ig /t /stop"
         )
 
-# ----------------- PRE -----------------
-def pre(update: Update, context: CallbackContext):
-    sender_id = update.effective_user.id
-    if sender_id != OWNER_ID:
-        update.message.reply_text("⛔ Bu komutu kullanamazsın.")
+async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid != OWNER_ID:
+        await update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
     if not context.args:
-        update.message.reply_text("❌ Kullanım: /pre USER_ID")
+        await update.message.reply_text("❌ Kullanım: /pre USER_ID")
         return
     try:
         target_id = int(context.args[0])
     except ValueError:
-        update.message.reply_text("❌ Geçersiz ID")
+        await update.message.reply_text("❌ Geçersiz ID")
         return
     data = load_json("authorized.json", {"users": []})
     if target_id in data["users"]:
-        update.message.reply_text("ℹ️ Bu kullanıcı zaten premium.")
+        await update.message.reply_text("ℹ️ Bu kullanıcı zaten premium.")
         return
     data["users"].append(target_id)
     save_json("authorized.json", data)
-    update.message.reply_text(f"✅ {target_id} premium yapıldı.")
+    await update.message.reply_text(f"✅ {target_id} premium yapıldı.")
 
-# ----------------- LOGIN -----------------
-def login(update: Update, context: CallbackContext):
+# ---------------- LOGIN ----------------
+async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_premium(uid):
-        update.message.reply_text("⛔ Premium değilsiniz.")
+        await update.message.reply_text("⛔ Premium değilsiniz.")
         return
     LOGIN_STATE[uid] = "phone"
-    update.message.reply_text("📱 Telefon numaranızı girin (+90...)")
+    await update.message.reply_text("📱 Telefon numaranızı girin (+90...)")
 
-def handle_login(update: Update, context: CallbackContext):
+async def handle_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid not in LOGIN_STATE:
         return
@@ -96,7 +91,7 @@ def handle_login(update: Update, context: CallbackContext):
         data = TEMP_CLIENT[uid]
         asyncio.create_task(async_login_password(update, uid, data, text))
 
-# ----------------- ASYNC LOGIN STEPS -----------------
+# ---------------- ASYNC LOGIN ----------------
 async def async_login_phone(update, uid, client, phone):
     try:
         await client.connect()
@@ -137,7 +132,7 @@ def cleanup(uid):
     LOGIN_STATE.pop(uid, None)
     TEMP_CLIENT.pop(uid, None)
 
-# ----------------- USERBOT -----------------
+# ---------------- USERBOT ----------------
 def get_client(uid):
     sessions = load_json("sessions.json", {})
     if str(uid) not in sessions:
@@ -167,52 +162,52 @@ async def tag_all(uid, text):
                     chunk = []
                     await asyncio.sleep(7)
 
-# ----------------- COMMANDS -----------------
-def gn(update: Update, context: CallbackContext):
+# ---------------- COMMANDS ----------------
+async def gn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     asyncio.create_task(tag_all(uid, "🌅 Günaydın"))
 
-def ig(update: Update, context: CallbackContext):
+async def ig(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     asyncio.create_task(tag_all(uid, "🌙 İyi geceler"))
 
-def t(update: Update, context: CallbackContext):
+async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     msg = " ".join(context.args)
     if msg:
         asyncio.create_task(tag_all(uid, msg))
     else:
-        update.message.reply_text("❌ /t mesaj")
+        await update.message.reply_text("❌ /t mesaj")
 
-def stop(update: Update, context: CallbackContext):
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     STOP_FLAGS[uid] = True
-    update.message.reply_text("⛔ İşlem durduruldu")
+    await update.message.reply_text("⛔ İşlem durduruldu")
 
-def logout(update: Update, context: CallbackContext):
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     sessions = load_json("sessions.json", {})
     sessions.pop(str(uid), None)
     save_json("sessions.json", sessions)
-    update.message.reply_text("🚪 Hesap silindi")
+    await update.message.reply_text("🚪 Hesap silindi")
 
-# ----------------- MAIN -----------------
-def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+# ---------------- MAIN ----------------
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("login", login))
-    dp.add_handler(CommandHandler("logout", logout))
-    dp.add_handler(CommandHandler("gn", gn))
-    dp.add_handler(CommandHandler("ig", ig))
-    dp.add_handler(CommandHandler("t", t))
-    dp.add_handler(CommandHandler("stop", stop))
-    dp.add_handler(CommandHandler("pre", pre))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_login))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("login", login))
+    app.add_handler(CommandHandler("logout", logout))
+    app.add_handler(CommandHandler("gn", gn))
+    app.add_handler(CommandHandler("ig", ig))
+    app.add_handler(CommandHandler("t", t))
+    app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CommandHandler("pre", pre))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_login))
 
-    updater.start_polling()
-    updater.idle()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
