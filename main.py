@@ -1,4 +1,5 @@
-import os, json, asyncio
+
+import os, json, asyncio, random
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError
@@ -98,7 +99,7 @@ async def async_login_phone(update, uid, client, phone):
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin")
+        await update.message.reply_text("📩 Telegram kodunu girin (örnek: 1 2 3 4 5) Birer boşluk yapamazsankz @OfficialKiyici ile iletişime Geçin ")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -139,7 +140,16 @@ def get_client(uid):
         return None
     return TelegramClient(StringSession(sessions[str(uid)]), API_ID, API_HASH)
 
-async def tag_all(uid, text):
+# 100 Günaydın ve İyi Geceler mesajları
+GOOD_MORNING_MESSAGES = [
+    f"🌅 Günaydın! ☀️ Mesaj {i}" for i in range(1, 101)
+]
+
+GOOD_NIGHT_MESSAGES = [
+    f"🌙 İyi geceler! 🌌 Mesaj {i}" for i in range(1, 101)
+]
+
+async def tag_all(uid, text=None, type_msg=None):
     STOP_FLAGS[uid] = False
     client = get_client(uid)
     if not client:
@@ -151,31 +161,36 @@ async def tag_all(uid, text):
             break
         if d.is_group:
             users = await client.get_participants(d)
-            chunk = []
             for u in users:
                 if STOP_FLAGS.get(uid):
                     break
                 if u.username:
-                    chunk.append(f"@{u.username}")
-                if len(chunk) == 5:
-                    await client.send_message(d.id, text + "\n" + " ".join(chunk))
-                    chunk = []
-                    await asyncio.sleep(7)
+                    # Eğer hazır mesaj kullanılıyorsa rastgele seç
+                    if type_msg == "gn":
+                        msg = random.choice(GOOD_MORNING_MESSAGES) + f" @{u.username}"
+                    elif type_msg == "ig":
+                        msg = random.choice(GOOD_NIGHT_MESSAGES) + f" @{u.username}"
+                    elif type_msg == "t":
+                        msg = text + f" @{u.username}"
+                    else:
+                        msg = text + f" @{u.username}"
+                    await client.send_message(d.id, msg)
+                    await asyncio.sleep(1)  # flood önleme
 
 # ---------------- COMMANDS ----------------
 async def gn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    asyncio.create_task(tag_all(uid, "🌅 Günaydın"))
+    asyncio.create_task(tag_all(uid, type_msg="gn"))
 
 async def ig(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    asyncio.create_task(tag_all(uid, "🌙 İyi geceler"))
+    asyncio.create_task(tag_all(uid, type_msg="ig"))
 
 async def t(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     msg = " ".join(context.args)
     if msg:
-        asyncio.create_task(tag_all(uid, msg))
+        asyncio.create_task(tag_all(uid, text=msg, type_msg="t"))
     else:
         await update.message.reply_text("❌ /t mesaj")
 
