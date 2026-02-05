@@ -1,5 +1,5 @@
 import os, json, asyncio
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from telegram import Update
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -10,11 +10,11 @@ API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 OWNER_ID = int(os.environ["OWNER_ID"])
 
-LOGIN_STATE = {}
-TEMP_CLIENT = {}
-STOP_FLAGS = {}   # user_id: bool
+LOGIN_STATE = {}     # user_id: step
+TEMP_CLIENT = {}     # user_id: telethon client + phone
+STOP_FLAGS = {}      # user_id: stop durumu
 
-# ---------- JSON ----------
+# ---------- JSON UTILS ----------
 def load_json(name, default):
     if not os.path.exists(name):
         with open(name, "w") as f:
@@ -32,31 +32,60 @@ def is_premium(uid):
     return uid == OWNER_ID or uid in data["users"]
 
 # ---------- START ----------
-def start(update: Update, context):
+def start(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     if not is_premium(uid):
         update.message.reply_text(
-            "⚠️ Premium kullanıcı değilsiniz.\n"
+            "⚠️ Premium değilsiniz.\n"
             "Premium için @OfficialKiyici hesabına yazın."
         )
     else:
         update.message.reply_text(
             "✅ Premium aktif.\n"
-            "/login → hesap bağla\n"
-            "/logout → hesap sil\n"
+            "/login → Hesap bağla\n"
+            "/logout → Hesap sil\n"
             "/gn /ig /t /stop"
         )
 
-# ---------- LOGIN ----------
-def login(update: Update, context):
-    uid = update.effective_user.id
-    if not is_premium(uid):
+# ---------- PRE KOMUTU ----------
+def pre(update: Update, context: CallbackContext):
+    sender_id = update.effective_user.id
+
+    if sender_id != OWNER_ID:
+        update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
 
+    if not context.args:
+        update.message.reply_text("❌ Kullanım: /pre USER_ID")
+        return
+
+    try:
+        target_id = int(context.args[0])
+    except ValueError:
+        update.message.reply_text("❌ Geçersiz ID")
+        return
+
+    data = load_json("authorized.json", {"users": []})
+
+    if target_id in data["users"]:
+        update.message.reply_text("ℹ️ Bu kullanıcı zaten premium.")
+        return
+
+    data["users"].append(target_id)
+    save_json("authorized.json", data)
+
+    update.message.reply_text(f"✅ {target_id} premium yapıldı.")
+
+# ---------- LOGIN FLOW ----------
+def login(update: Update, context: CallbackContext):
+    uid = update.effective_user.id
+    if not is_premium(uid):
+        update.message.reply_text("⛔ Premium değilsiniz.")
+        return
     LOGIN_STATE[uid] = "phone"
     update.message.reply_text("📱 Telefon numaranızı girin (+90...)")
 
-def handle_login(update: Update, context):
+def handle_login(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     if uid not in LOGIN_STATE:
         return
@@ -66,29 +95,39 @@ def handle_login(update: Update, context):
 
     if step == "phone":
         client = TelegramClient(StringSession(), API_ID, API_HASH)
-        client.connect()
-        client.send_code_request(text)
-        TEMP_CLIENT[uid] = {"client": client, "phone": text}
-        LOGIN_STATE[uid] = "code"
-        update.message.reply_text("📩 Telegram kodunu girin")
+        asyncio.create_task(start_phone_step(update, uid, client, text))
 
     elif step == "code":
         data = TEMP_CLIENT[uid]
-        try:
-            data["client"].sign_in(data["phone"], text)
-            save_session(uid, data["client"])
-            cleanup(uid)
-            update.message.reply_text("✅ Hesap bağlandı")
-        except SessionPasswordNeededError:
-            LOGIN_STATE[uid] = "password"
-            update.message.reply_text("🔐 2FA şifresini girin")
+        asyncio.create_task(start_code_step(update, uid, data, text))
 
     elif step == "password":
         data = TEMP_CLIENT[uid]
-        data["client"].sign_in(password=text)
+        asyncio.create_task(start_password_step(update, uid, data, text))
+
+# ---------- ASYNC LOGIN STEPS ----------
+async def start_phone_step(update, uid, client, phone):
+    await client.connect()
+    await client.send_code_request(phone)
+    TEMP_CLIENT[uid] = {"client": client, "phone": phone}
+    LOGIN_STATE[uid] = "code"
+    update.message.reply_text("📩 Telegram kodunu girin")
+
+async def start_code_step(update, uid, data, code):
+    try:
+        await data["client"].sign_in(data["phone"], code)
         save_session(uid, data["client"])
         cleanup(uid)
         update.message.reply_text("✅ Hesap bağlandı")
+    except SessionPasswordNeededError:
+        LOGIN_STATE[uid] = "password"
+        update.message.reply_text("🔐 2FA şifresini girin")
+
+async def start_password_step(update, uid, data, password):
+    await data["client"].sign_in(password=password)
+    save_session(uid, data["client"])
+    cleanup(uid)
+    update.message.reply_text("✅ Hesap bağlandı")
 
 def save_session(uid, client):
     sessions = load_json("sessions.json", {})
@@ -114,7 +153,6 @@ async def tag_all(uid, text):
 
     await client.start()
     dialogs = await client.get_dialogs()
-
     for d in dialogs:
         if STOP_FLAGS.get(uid):
             break
@@ -132,26 +170,28 @@ async def tag_all(uid, text):
                     await asyncio.sleep(7)
 
 # ---------- COMMANDS ----------
-def gn(update: Update, context):
+def gn(update: Update, context: CallbackContext):
     uid = update.effective_user.id
-    asyncio.run(tag_all(uid, "🌅 Günaydın"))
+    asyncio.create_task(tag_all(uid, "🌅 Günaydın"))
 
-def ig(update: Update, context):
+def ig(update: Update, context: CallbackContext):
     uid = update.effective_user.id
-    asyncio.run(tag_all(uid, "🌙 İyi geceler"))
+    asyncio.create_task(tag_all(uid, "🌙 İyi geceler"))
 
-def t(update: Update, context):
+def t(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     msg = " ".join(context.args)
     if msg:
-        asyncio.run(tag_all(uid, msg))
+        asyncio.create_task(tag_all(uid, msg))
+    else:
+        update.message.reply_text("❌ /t mesaj")
 
-def stop(update: Update, context):
+def stop(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     STOP_FLAGS[uid] = True
     update.message.reply_text("⛔ İşlem durduruldu")
 
-def logout(update: Update, context):
+def logout(update: Update, context: CallbackContext):
     uid = update.effective_user.id
     sessions = load_json("sessions.json", {})
     sessions.pop(str(uid), None)
@@ -160,8 +200,8 @@ def logout(update: Update, context):
 
 # ---------- MAIN ----------
 def main():
-    up = Updater(BOT_TOKEN, use_context=True)
-    dp = up.dispatcher
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("login", login))
@@ -170,10 +210,11 @@ def main():
     dp.add_handler(CommandHandler("ig", ig))
     dp.add_handler(CommandHandler("t", t))
     dp.add_handler(CommandHandler("stop", stop))
+    dp.add_handler(CommandHandler("pre", pre))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_login))
 
-    up.start_polling()
-    up.idle()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
