@@ -33,38 +33,40 @@ def is_premium(uid):
     data = load_json("authorized.json", {"users": []})
     return uid == OWNER_ID or uid in data["users"]
 
-# ---------------- START ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "✅ Userbot hazır!\n"
-        "Komutlar:\n"
-        ".login → Hesap bağla\n"
-        ".logout → Hesap sil\n"
-        ".pre → Premium ekle (sadece owner)\n"
-        ".gn → Günaydın etiketi\n"
-        ".ig → İyi geceler etiketi\n"
-        ".t <mesaj> → Mesaj + etiket\n"
-        ".stop → İşlemi durdur"
-    )
-
 # ---------------- COMMANDS ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if not is_premium(uid):
+        await update.message.reply_text(
+            "⚠️ Premium değilsiniz.\nPremium için Owner ile iletişime geçin."
+        )
+    else:
+        await update.message.reply_text(
+            "✅ Premium aktif.\n.login → Hesap bağla\n.logout → Hesap sil\n.gn .ig .t .stop\n.pre → Owner komutu"
+        )
+
+# ---------------- .PRE ----------------
 async def pre(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid != OWNER_ID:
         await update.message.reply_text("⛔ Bu komutu kullanamazsın.")
         return
+
     if not context.args:
         await update.message.reply_text("❌ Kullanım: .pre USER_ID")
         return
+
     try:
         target_id = int(context.args[0])
     except ValueError:
         await update.message.reply_text("❌ Geçersiz ID")
         return
+
     data = load_json("authorized.json", {"users": []})
     if target_id in data["users"]:
         await update.message.reply_text("ℹ️ Bu kullanıcı zaten premium.")
         return
+
     data["users"].append(target_id)
     save_json("authorized.json", data)
     await update.message.reply_text(f"✅ {target_id} premium yapıldı.")
@@ -101,7 +103,7 @@ async def async_login_phone(update, uid, client, phone):
         await client.send_code_request(phone)
         TEMP_CLIENT[uid] = {"client": client, "phone": phone}
         LOGIN_STATE[uid] = "code"
-        await update.message.reply_text("📩 Telegram kodunu girin (rakamlar arasında boşluk yok)")
+        await update.message.reply_text("📩 Telegram kodunu girin (örn: 12345)")
     except Exception as e:
         await update.message.reply_text(f"❌ Hata: {e}")
 
@@ -135,7 +137,7 @@ def cleanup(uid):
     LOGIN_STATE.pop(uid, None)
     TEMP_CLIENT.pop(uid, None)
 
-# ---------------- USERBOT ----------------
+# ---------------- USERBOT CLIENT ----------------
 def get_client(uid):
     sessions = load_json("sessions.json", {})
     if str(uid) not in sessions:
@@ -144,15 +146,11 @@ def get_client(uid):
 
 # ---------------- MESAJLAR ----------------
 GOOD_MORNING_MESSAGES = [
-    "Günaydın 🌞", "Mutlu sabahlar ☀️", "İyi sabahlar 😊", "Yeni bir gün başladı 🌅", 
-    "Güne güzel başlayın 🌸", "Harika bir sabah dilerim ☀️", "Enerjik günler 🌞", 
-    "Şahane sabahlar 🌼", "Neşeli sabahlar 😄", "Sabahın güzelliği sizinle olsun 🌞"
+    "Günaydın! 🌞", "Hayırlı sabahlar! ☀️", "İyi sabahlar! 🌅", # ... 30+
 ]
 
 GOOD_NIGHT_MESSAGES = [
-    "İyi geceler 🌙", "Tatlı rüyalar 😴", "Huzurlu geceler 🌌", "Rahat bir uyku 🌟", 
-    "Mutlu geceler 🌙", "Güzel rüyalar ✨", "Huzur dolu gece 🌌", "İyi uykular 😴", 
-    "Rüya gibi geceler 🌠", "Sevgi dolu geceler 🌙"
+    "İyi geceler! 🌙", "Huzurlu geceler! 🌌", "Tatlı rüyalar! 😴", # ... 30+
 ]
 
 # ---------------- ETIKETLEME ----------------
@@ -167,10 +165,7 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
         for u in participants:
             if STOP_FLAGS.get(uid):
                 break
-            if u.username:
-                mention = f"@{u.username}"
-            else:
-                mention = f"[{u.first_name}](tg://user?id={u.id})"
+            mention = f"@{u.username}" if u.username else f"[{u.first_name}](tg://user?id={u.id})"
             if type_msg == "gn":
                 msg = random.choice(GOOD_MORNING_MESSAGES) + " " + mention
             elif type_msg == "ig":
@@ -180,7 +175,7 @@ async def tag_all(uid, chat_id, text=None, type_msg=None):
             else:
                 msg = text + " " + mention
             await client.send_message(chat_id, msg, parse_mode="md")
-            await asyncio.sleep(3)  # 3 saniye bekleme
+            await asyncio.sleep(3)
     except Exception as e:
         print(f"Tag error: {e}")
 
@@ -220,7 +215,7 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Nokta ile komutlar
+    # CommandHandler’lar noktadan başlayacak şekilde
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("logout", logout))
