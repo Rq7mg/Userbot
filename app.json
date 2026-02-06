@@ -1,6 +1,7 @@
 {
-  "name": "Userbot",
-  "description": "Telegram Userbot with login system",
+  "name": "Moon-Userbot",
+  "description": "Telegram Userbot with login system, multi-user support, and admin commands",
+  "repository": "https://github.com/The-MoonTg-project/Moon-Userbot",
   "buildpacks": [
     {
       "url": "heroku/python"
@@ -8,7 +9,7 @@
   ],
   "env": {
     "BOT_TOKEN": {
-      "description": "Telegram Bot Token",
+      "description": "Telegram bot token (sadece login işlemleri için)",
       "required": true
     },
     "API_ID": {
@@ -27,7 +28,8 @@
   "formation": {
     "worker": {
       "quantity": 1,
-      "size": "free"
+      "size": "Eco"
     }
-  }
+  },
+  "stack": "heroku-22"
 }
