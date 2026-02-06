@@ -1,12 +1,33 @@
 {
-  "name": "Telegram Premium Userbot",
+  "name": "Userbot",
+  "description": "Telegram Userbot with login system",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
   "env": {
-    "BOT_TOKEN": { "required": true },
-    "API_ID": { "required": true },
-    "API_HASH": { "required": true },
-    "OWNER_ID": { "required": true }
+    "BOT_TOKEN": {
+      "description": "Telegram Bot Token",
+      "required": true
+    },
+    "API_ID": {
+      "description": "Telegram API ID",
+      "required": true
+    },
+    "API_HASH": {
+      "description": "Telegram API HASH",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Owner Telegram ID",
+      "required": true
+    }
   },
   "formation": {
-    "worker": { "quantity": 1 }
+    "worker": {
+      "quantity": 1,
+      "size": "free"
+    }
   }
 }
