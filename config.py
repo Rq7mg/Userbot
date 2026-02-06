@@ -1,8 +1,7 @@
 import os
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-API_ID = int(os.environ.get("API_ID"))
-API_HASH = os.environ.get("API_HASH")
-OWNER_ID = int(os.environ.get("OWNER_ID"))
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
 
-SESSION_NAME = "userbot"
+BOT_TOKEN = os.environ["BOT_TOKEN"]   # SADECE login_bot için
+OWNER_ID = int(os.environ["OWNER_ID"])
